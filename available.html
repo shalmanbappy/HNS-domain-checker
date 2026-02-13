@@ -39,7 +39,7 @@
         async function loadAvailableDomains() {
             const contentDiv = document.getElementById('content');
             try {
-                const response = await fetch('http://localhost:3000/available-domains');
+                const response = await fetch('/available-domains');
                 const data = await response.json();
                 contentDiv.innerHTML = '';
                 
@@ -101,4 +101,5 @@
         loadAvailableDomains();
     </script>
 </body>
+
 </html>
