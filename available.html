@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>সংরক্ষিত Available HNS ডোমেইন</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background: #f4f7f6; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h2 { color: #333; margin-top: 0; }
+        a.back-btn { display: inline-block; margin-bottom: 20px; background: #007bff; color: white; padding: 8px 15px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 14px; }
+        
+        .date-group { margin-bottom: 35px; border-left: 4px solid #333; padding-left: 15px; }
+        .date-title { background: #333; color: white; padding: 10px 15px; border-radius: 6px; font-size: 16px; margin-bottom: 15px; font-weight: bold;}
+        
+        .title-group { margin-bottom: 20px; margin-left: 10px;}
+        .title-heading { font-size: 15px; font-weight: bold; color: #555; margin-bottom: 10px; border-bottom: 1px dashed #ccc; padding-bottom: 5px;}
+        
+        .domain-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+        .domain-item { background: #f8f9fa; padding: 12px 10px; border-radius: 6px; text-align: center; cursor: pointer; border: 1px solid #dee2e6; font-weight: 600; color: #28a745; user-select: none; }
+        .domain-item:hover { background: #28a745; color: white; transform: translateY(-2px); box-shadow: 0 4px 8px rgba(40,167,69,0.2); }
+        
+        #toast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 6px; padding: 12px; position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); font-weight: bold; z-index: 10;}
+        #toast.show { visibility: visible; animation: fadein 0.3s, fadeout 0.3s 1.7s; }
+        @keyframes fadein { from {bottom: 0; opacity: 0;} to {bottom: 30px; opacity: 1;} }
+        @keyframes fadeout { from {bottom: 30px; opacity: 1;} to {bottom: 0; opacity: 0;} }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-btn">⬅ মেইন পেজে ফিরে যান</a>
+        <h2>📁 সংরক্ষিত Available ডোমেইনসমূহ</h2>
+        <div id="content">ডাটা লোড হচ্ছে...</div>
+    </div>
+
+    <div id="toast">কপি হয়েছে!</div>
+
+    <script>
+        async function loadAvailableDomains() {
+            const contentDiv = document.getElementById('content');
+            try {
+                const response = await fetch('http://localhost:3000/available-domains');
+                const data = await response.json();
+                contentDiv.innerHTML = '';
+                
+                const dates = Object.keys(data).sort((a, b) => new Date(b) - new Date(a)); 
+
+                if(dates.length === 0) {
+                    contentDiv.innerHTML = '<p style="color: #666;">এখনো কোনো ডোমেইন পাওয়া যায়নি।</p>';
+                    return;
+                }
+
+                dates.forEach(date => {
+                    const titlesObj = data[date];
+                    if(Object.keys(titlesObj).length === 0) return;
+
+                    const dateGroup = document.createElement('div');
+                    dateGroup.className = 'date-group';
+                    dateGroup.innerHTML = `<div class="date-title">📅 তারিখ: ${date}</div>`;
+
+                    // টাইটেল (Subsection) লুপ করা
+                    Object.keys(titlesObj).forEach(title => {
+                        const domains = titlesObj[title];
+                        if(domains.length === 0) return;
+
+                        const titleGroup = document.createElement('div');
+                        titleGroup.className = 'title-group';
+                        titleGroup.innerHTML = `<div class="title-heading">🏷️ ${title} (${domains.length} টি ডোমেইন)</div>`;
+
+                        const grid = document.createElement('div');
+                        grid.className = 'domain-grid';
+
+                        domains.forEach(domain => {
+                            const item = document.createElement('div');
+                            item.className = 'domain-item';
+                            item.innerText = `.${domain}`;
+                            item.onclick = () => copyToClipboard(domain);
+                            grid.appendChild(item);
+                        });
+
+                        titleGroup.appendChild(grid);
+                        dateGroup.appendChild(titleGroup);
+                    });
+
+                    contentDiv.appendChild(dateGroup);
+                });
+            } catch(err) {
+                contentDiv.innerHTML = '<p style="color:red;">ডাটা লোড করতে সমস্যা হচ্ছে।</p>';
+            }
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                const toast = document.getElementById("toast");
+                toast.innerText = `.${text} কপি হয়েছে! ✅`;
+                toast.className = "show";
+                setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 2000);
+            });
+        }
+
+        loadAvailableDomains();
+    </script>
+</body>
+</html>

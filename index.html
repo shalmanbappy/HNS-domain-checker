@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HNS Bulk Checker</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background: #f4f7f6; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h2 { color: #333; margin-top: 0; }
+        input[type="text"], textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; box-sizing: border-box; margin-bottom: 15px;}
+        textarea { height: 120px; resize: vertical; }
+        .btn-group { display: flex; gap: 10px; }
+        button { color: white; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; font-size: 16px;}
+        #checkBtn { background: #28a745; }
+        #checkBtn:hover { background: #218838; }
+        #stopBtn { background: #dc3545; display: none; }
+        #stopBtn:hover { background: #c82333; }
+        
+        .results { margin-top: 30px; }
+        .batch-group { margin-top: 15px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa; overflow: hidden; }
+        .batch-time { background: #f1f1f1; padding: 10px 15px; font-size: 14px; color: #444; font-weight: bold; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center;}
+        .item { display: flex; justify-content: space-between; padding: 10px 15px; border-bottom: 1px solid #eee; background: #fff; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .available { color: #28a745; font-weight: bold; }
+        .taken { color: #dc3545; font-weight: bold; }
+        .error { color: #ffc107; font-weight: bold; }
+        
+        .link-btn { display: inline-block; margin-bottom: 20px; background: #007bff; color: white; padding: 8px 15px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 14px; }
+        #loadingMsg { color: #007bff; font-weight: bold; margin-top: 15px; display: none; text-align: center;}
+        .header-flex { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ddd; padding-bottom: 5px; }
+        .clear-btn { background: #dc3545; padding: 6px 12px; width: auto; font-size: 13px; margin: 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🔍 HNS Bulk Checker</h2>
+        <a href="/available.html" class="link-btn">📁 সংরক্ষিত Available ডোমেইনগুলো দেখুন ➔</a>
+        
+        <label style="font-weight:bold; font-size:14px; color:#555;">🏷️ চেকিং টাইটেল (ঐচ্ছিক):</label>
+        <input type="text" id="batchTitle" placeholder="যেমন: My Favorite Names">
+
+        <label style="font-weight:bold; font-size:14px; color:#555;">📝 ডোমেইন নামগুলো দিন (কমা বা স্পেস দিয়ে আলাদা করুন):</label>
+        <textarea id="rawText" placeholder="salmanbappy, pwrcalc, meterread..."></textarea>
+        
+        <div class="btn-group">
+            <button id="checkBtn" onclick="startCheck()">চেক শুরু করুন</button>
+            <button id="stopBtn" onclick="stopCheck()">🛑 চেক থামান (Stop)</button>
+        </div>
+        
+        <div id="loadingMsg">⏳ অপেক্ষা করুন, একটি একটি করে চেক হচ্ছে...</div>
+
+        <div class="results" id="results" style="display:none;">
+            <div class="header-flex">
+                <h3 style="margin: 0;">বর্তমান চেকিং হিস্ট্রি:</h3>
+                <button class="clear-btn" onclick="clearHistory()">🗑️ হিস্ট্রি মুছুন</button>
+            </div>
+            <div id="list"></div>
+        </div>
+    </div>
+
+    <script>
+        let abortController = null;
+
+        document.addEventListener("DOMContentLoaded", loadHistory);
+
+        function loadHistory() {
+            const history = JSON.parse(localStorage.getItem('hns_check_history') || '[]');
+            const listDiv = document.getElementById('list');
+            if (history.length > 0) {
+                document.getElementById('results').style.display = 'block';
+                listDiv.innerHTML = '';
+                history.forEach(batch => renderBatchHistory(batch.timeStr, batch.data));
+            } else {
+                document.getElementById('results').style.display = 'none';
+                listDiv.innerHTML = '';
+            }
+        }
+
+        function clearHistory() {
+            if(confirm("আপনি কি নিশ্চিত যে হোম পেজের সব হিস্ট্রি মুছে ফেলতে চান?")) {
+                localStorage.removeItem('hns_check_history');
+                loadHistory(); 
+            }
+        }
+
+        async function startCheck() {
+            const rawText = document.getElementById('rawText').value;
+            const titleInput = document.getElementById('batchTitle').value.trim();
+            const words = rawText.split(/[,\s\n]+/).map(w => w.trim().toLowerCase()).filter(w => w.length > 0);
+            
+            if(words.length === 0) return alert("দয়া করে কিছু নাম লিখুন!");
+
+            abortController = new AbortController();
+            document.getElementById('checkBtn').style.display = 'none';
+            document.getElementById('stopBtn').style.display = 'block';
+            document.getElementById('loadingMsg').style.display = 'block';
+            document.getElementById('results').style.display = 'block';
+
+            const timeStr = new Date().toLocaleTimeString('bn-BD');
+            const displayTitle = titleInput ? `${titleInput} (${timeStr})` : `সাধারণ তালিকা (${timeStr})`;
+
+            const listDiv = document.getElementById('list');
+            const batchDiv = document.createElement('div');
+            batchDiv.className = 'batch-group';
+            batchDiv.innerHTML = `<div class="batch-time"><span>📁 ${displayTitle}</span> <span><span id="progress-text">0</span>/${words.length} চেক হয়েছে <span id="stop-text" style="color:#dc3545;"></span></span></div><div id="batch-items"></div>`;
+            listDiv.prepend(batchDiv);
+
+            const itemsContainer = batchDiv.querySelector('#batch-items');
+            const progressText = batchDiv.querySelector('#progress-text');
+            const batchResults = [];
+            let checkedCount = 0;
+
+            try {
+                const response = await fetch('/check-stream', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ rawText: rawText, title: titleInput }),
+                    signal: abortController.signal
+                });
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder("utf-8");
+                let buffer = '';
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // অসম্পূর্ণ লাইন বাফারে রাখা হলো
+
+                    for (const line of lines) {
+                        if (line.trim()) {
+                            try {
+                                const item = JSON.parse(line);
+                                batchResults.push(item);
+                                checkedCount++;
+
+                                const div = document.createElement('div');
+                                div.className = 'item';
+                                
+                                let statusClass = 'taken';
+                                let statusIcon = '❌';
+                                let statusText = `Taken (${item.state})`;
+
+                                if (item.available) {
+                                    statusClass = 'available';
+                                    statusIcon = '✅';
+                                    statusText = 'Available';
+                                } else if (item.state === 'NETWORK_ERROR' || item.state === 'API_ERROR') {
+                                    statusClass = 'error';
+                                    statusIcon = '⚠️';
+                                    statusText = `Error (${item.state})`;
+                                }
+
+                                div.innerHTML = `<span>.${item.name}</span> <span class="${statusClass}">${statusIcon} ${statusText}</span>`;
+                                itemsContainer.appendChild(div);
+                                progressText.innerText = checkedCount;
+                            } catch (parseErr) {
+                                console.error("JSON Parse Error:", parseErr);
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    batchDiv.querySelector('#stop-text').innerText = " (Stopped)";
+                } else {
+                    const errDiv = document.createElement('div');
+                    errDiv.className = 'item error';
+                    errDiv.innerText = "⚠️ সার্ভার কানেকশন বিচ্ছিন্ন হয়েছে!";
+                    itemsContainer.appendChild(errDiv);
+                }
+            } finally {
+                document.getElementById('checkBtn').style.display = 'block';
+                document.getElementById('stopBtn').style.display = 'none';
+                document.getElementById('loadingMsg').style.display = 'none';
+                document.getElementById('rawText').value = '';
+
+                if (batchResults.length > 0) {
+                    const history = JSON.parse(localStorage.getItem('hns_check_history') || '[]');
+                    history.unshift({ timeStr: displayTitle, data: batchResults });
+                    localStorage.setItem('hns_check_history', JSON.stringify(history));
+                }
+            }
+        }
+
+        function stopCheck() {
+            if (abortController) {
+                abortController.abort(); 
+                document.getElementById('loadingMsg').innerText = "🛑 থামানো হচ্ছে...";
+            }
+        }
+
+        function renderBatchHistory(timeStr, data) {
+            const listDiv = document.getElementById('list');
+            const batchDiv = document.createElement('div');
+            batchDiv.className = 'batch-group';
+            batchDiv.innerHTML = `<div class="batch-time">📁 ${timeStr}</div>`;
+            
+            data.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'item';
+                
+                let statusClass = 'taken';
+                let statusIcon = '❌';
+                let statusText = `Taken (${item.state})`;
+
+                if (item.available) {
+                    statusClass = 'available';
+                    statusIcon = '✅';
+                    statusText = 'Available';
+                } else if (item.state === 'NETWORK_ERROR' || item.state === 'API_ERROR') {
+                    statusClass = 'error';
+                    statusIcon = '⚠️';
+                    statusText = `Error (${item.state})`;
+                }
+
+                div.innerHTML = `<span>.${item.name}</span> <span class="${statusClass}">${statusIcon} ${statusText}</span>`;
+                batchDiv.appendChild(div);
+            });
+            listDiv.appendChild(batchDiv);
+        }
+    </script>
+</body>
+</html>
